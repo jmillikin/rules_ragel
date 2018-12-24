@@ -1,4 +1,5 @@
-load("//:ragel.bzl", "RAGEL_VERSIONS", "ragel_toolchain")
+load("//:ragel.bzl", "RAGEL_VERSIONS")
+load("//ragel:toolchain.bzl", "ragel_toolchain")
 
 [ragel_toolchain(
     name = "v{}".format(version),

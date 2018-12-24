@@ -22,6 +22,12 @@ ragel_register_toolchains()
 ```
 """
 
+load(
+    "//ragel:toolchain.bzl",
+    _RAGEL_TOOLCHAIN = "RAGEL_TOOLCHAIN",
+    _ragel_context = "ragel_context",
+)
+
 _LATEST_STABLE = "6.10"
 
 _VERSION_URLS = {
@@ -46,13 +52,11 @@ _COLM_URLS = {
     },
 }
 
-RAGEL_TOOLCHAIN = "@io_bazel_rules_ragel//ragel:toolchain_type"
-
 RAGEL_VERSIONS = list(_VERSION_URLS)
 
-_SYNTAXES = {
+_LANGUAGES = {
     "c": ("c", "-C"),
-    "cpp": ("cc", "-C"),
+    "c++": ("cc", "-C"),
     "d": ("d", "-D"),
     "go": ("go", "-Z"),
     "java": ("java", "-J"),
@@ -61,96 +65,106 @@ _SYNTAXES = {
     "ocaml": ("ml", "-O"),
 }
 
-def _ragel_lexer(ctx):
-    ragel = ctx.toolchains[RAGEL_TOOLCHAIN].ragel
+def _ragel_machine_impl(ctx):
+    ragel = _ragel_context(ctx)
 
-    (ext, syntax_flag) = _SYNTAXES[ctx.attr.syntax]
-    out = ctx.actions.declare_file("{}.{}".format(ctx.attr.name, ext))
-    dot = ctx.actions.declare_file("{}.dot".format(ctx.attr.name))
+    (ext, syntax_flag) = _LANGUAGES[ctx.attr.language]
+    out_src = ctx.actions.declare_file("{}.{}".format(ctx.attr.name, ext))
+    out_dot = ctx.actions.declare_file("{}_report.dot".format(ctx.attr.name))
+    out_xml = ctx.actions.declare_file("{}_report.xml".format(ctx.attr.name))
 
     run_common = dict(
         executable = ragel.executable,
-        inputs = [ctx.file.src] + ragel.inputs,
+        inputs = ragel.inputs + ctx.files.src + ctx.files.data,
         input_manifests = ragel.input_manifests,
-        env = ragel.env(ctx),
+        env = ragel.env,
         mnemonic = "Ragel",
         progress_message = "Generating Ragel lexer {} (from {})".format(ctx.label, ctx.attr.src.label),
     )
 
+    # First action: Ragel state machine compilation
+    ragel_args = ctx.actions.args()
+    ragel_args.add_all([
+        syntax_flag,
+        "-o",
+        out_src.path,
+    ])
+    ragel_args.add_all(ctx.attr.opts)
+    ragel_args.add(ctx.file.src.path)
     ctx.actions.run(
-        arguments = [syntax_flag, "-o", out.path] + ctx.attr.ragel_opts + [ctx.file.src.path],
-        outputs = [out],
+        arguments = [ragel_args],
+        outputs = [out_src],
         **run_common
     )
+
+    # Second action: Graphviz graph of machine states
+    graph_args = ctx.actions.args()
+    graph_args.add_all([
+        "-V",
+        "-o",
+        out_dot.path,
+    ])
+    graph_args.add_all(ctx.attr.opts)
+    graph_args.add(ctx.file.src.path)
     ctx.actions.run(
-        arguments = ["-V", "-o", dot.path, ctx.file.src.path],
-        outputs = [dot],
+        arguments = [graph_args],
+        outputs = [out_dot],
         **run_common
     )
+
+    # Third action: XML intermediate format for inspection
+    report_args = ctx.actions.args()
+    report_args.add_all([
+        "-x",
+        "-o",
+        out_xml.path,
+    ])
+    report_args.add_all(ctx.attr.opts)
+    report_args.add(ctx.file.src.path)
+    ctx.actions.run(
+        arguments = [report_args],
+        outputs = [out_xml],
+        **run_common
+    )
+
     return [
-        DefaultInfo(files = depset([out])),
-        OutputGroupInfo(graphviz = depset([dot])),
+        DefaultInfo(files = depset([out_src])),
+        OutputGroupInfo(ragel_report = depset([out_dot, out_xml])),
     ]
 
-ragel_lexer = rule(
-    _ragel_lexer,
+ragel_machine = rule(
+    _ragel_machine_impl,
     attrs = {
         "src": attr.label(
             mandatory = True,
-            single_file = True,
-            allow_files = [".rl"],
+            allow_single_file = [".rl"],
         ),
-        "syntax": attr.string(
-            values = list(_SYNTAXES),
-            default = "cpp",
+        "data": attr.label_list(
+            allow_files = True,
         ),
-        "ragel_opts": attr.string_list(),
+        "opts": attr.string_list(
+            allow_empty = True,
+        ),
+        "language": attr.string(
+            values = list(_LANGUAGES),
+            default = "c++",
+        ),
     },
-    toolchains = [RAGEL_TOOLCHAIN],
+    toolchains = [_RAGEL_TOOLCHAIN],
 )
 """
 ```python
-load("@io_bazel_rules_ragel//:ragel.bzl", "ragel_lexer")
-ragel_lexer(
-    name = "hello_cc",
+load("@io_bazel_rules_ragel//:ragel.bzl", "ragel_machine")
+ragel_machine(
+    name = "hello",
     src = "hello.rl",
 )
-ragel_lexer(
-    name = "hello_go",
-    src = "hello.rl",
-    syntax = "go",
+cc_binary(
+    name = "hello_bin",
+    srcs = [":hello"],
 )
 ```
 """
-
-def _ragel_env(ctx):
-    return {}
-
-def _ragel_toolchain(ctx):
-    (inputs, _, input_manifests) = ctx.resolve_command(
-        command = "ragel",
-        tools = [ctx.attr.ragel],
-    )
-    return [
-        platform_common.ToolchainInfo(
-            ragel = struct(
-                executable = ctx.executable.ragel,
-                inputs = inputs,
-                input_manifests = input_manifests,
-                env = _ragel_env,
-            ),
-        ),
-    ]
-
-ragel_toolchain = rule(
-    _ragel_toolchain,
-    attrs = {
-        "ragel": attr.label(
-            executable = True,
-            cfg = "host",
-        ),
-    },
-)
 
 def _check_version(version):
     if version not in _VERSION_URLS:
@@ -195,19 +209,19 @@ ragel_download = repository_rule(
     attrs = {
         "version": attr.string(mandatory = True),
         "_overlay_v6_BUILD": attr.label(
-            default = "//internal:overlay/ragel_v6_BUILD",
+            default = "//ragel/internal:overlay/ragel_v6.BUILD",
             single_file = True,
         ),
         "_overlay_v7_BUILD": attr.label(
-            default = "//internal:overlay/ragel_v7_BUILD",
+            default = "//ragel/internal:overlay/ragel_v7.BUILD",
             single_file = True,
         ),
         "_overlay_bin_BUILD": attr.label(
-            default = "//internal:overlay/ragel_bin_BUILD",
+            default = "//ragel/internal:overlay/ragel_bin.BUILD",
             single_file = True,
         ),
         "_overlay_colm_BUILD": attr.label(
-            default = "//internal:overlay/colm_BUILD",
+            default = "//ragel/internal:overlay/colm.BUILD",
             single_file = True,
         ),
     },
@@ -221,4 +235,4 @@ def ragel_register_toolchains(version = _LATEST_STABLE):
             name = repo_name,
             version = version,
         )
-    native.register_toolchains("@io_bazel_rules_ragel//toolchains:v{}_toolchain".format(version))
+    native.register_toolchains("@io_bazel_rules_ragel//ragel/toolchains:v{}_toolchain".format(version))
