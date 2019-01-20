@@ -17,16 +17,12 @@
 """Bazel build rules for Ragel.
 
 ```python
-load("@io_bazel_rules_ragel//:ragel.bzl", "ragel_register_toolchains")
+load("@io_bazel_rules_ragel//ragel:ragel.bzl", "ragel_register_toolchains")
 ragel_register_toolchains()
 ```
 """
 
-load(
-    "//ragel:toolchain.bzl",
-    _RAGEL_TOOLCHAIN = "RAGEL_TOOLCHAIN",
-    _ragel_context = "ragel_context",
-)
+# region Versions {{{
 
 _LATEST_STABLE = "6.10"
 
@@ -52,7 +48,73 @@ _COLM_URLS = {
     },
 }
 
-RAGEL_VERSIONS = list(_VERSION_URLS)
+def _check_version(version):
+    if version not in _VERSION_URLS:
+        fail("Ragel version {} not supported by rules_ragel.".format(repr(version)))
+
+# endregion }}}
+
+# region Toolchain {{{
+
+_TOOLCHAIN_TYPE = "@io_bazel_rules_ragel//ragel:toolchain_type"
+
+_ToolchainInfo = provider(fields = ["files", "vars", "ragel_executable"])
+
+def _ragel_toolchain_info(ctx):
+    toolchain = _ToolchainInfo(
+        ragel_executable = ctx.executable.ragel,
+        files = depset([ctx.executable.ragel]),
+        vars = {"RAGEL": ctx.executable.ragel.path},
+    )
+    return [
+        platform_common.ToolchainInfo(ragel_toolchain = toolchain),
+        platform_common.TemplateVariableInfo(toolchain.vars),
+    ]
+
+ragel_toolchain_info = rule(
+    _ragel_toolchain_info,
+    attrs = {
+        "ragel": attr.label(
+            executable = True,
+            cfg = "host",
+        ),
+    },
+)
+
+def _ragel_toolchain_alias(ctx):
+    toolchain = ctx.toolchains[_TOOLCHAIN_TYPE].ragel_toolchain
+    return [
+        DefaultInfo(files = toolchain.files),
+        toolchain,
+        platform_common.TemplateVariableInfo(toolchain.vars),
+    ]
+
+ragel_toolchain_alias = rule(
+    _ragel_toolchain_alias,
+    toolchains = [_TOOLCHAIN_TYPE],
+)
+
+def ragel_register_toolchains(version = _LATEST_STABLE):
+    _check_version(version)
+    repo_name = "ragel_v{}".format(version)
+    if repo_name not in native.existing_rules().keys():
+        ragel_repository(
+            name = repo_name,
+            version = version,
+        )
+    native.register_toolchains("@io_bazel_rules_ragel//ragel/toolchains:v{}".format(version))
+
+# endregion }}}
+
+ragel_common = struct(
+    VERSIONS = list(_VERSION_URLS),
+    ToolchainInfo = _ToolchainInfo,
+    TOOLCHAIN_TYPE = _TOOLCHAIN_TYPE,
+)
+
+# region Build Rules {{{
+
+# region rule(ragel) {{{
 
 _LANGUAGES = {
     "c": ("c", "-C"),
@@ -65,8 +127,8 @@ _LANGUAGES = {
     "ocaml": ("ml", "-O"),
 }
 
-def _ragel_machine_impl(ctx):
-    ragel = _ragel_context(ctx)
+def _ragel(ctx):
+    ragel_toolchain = ctx.attr._ragel_toolchain[ragel_common.ToolchainInfo]
 
     (ext, syntax_flag) = _LANGUAGES[ctx.attr.language]
     out_src = ctx.actions.declare_file("{}.{}".format(ctx.attr.name, ext))
@@ -74,12 +136,10 @@ def _ragel_machine_impl(ctx):
     out_xml = ctx.actions.declare_file("{}_report.xml".format(ctx.attr.name))
 
     run_common = dict(
-        executable = ragel.executable,
-        inputs = ragel.inputs + ctx.files.src + ctx.files.data,
-        input_manifests = ragel.input_manifests,
-        env = ragel.env,
+        executable = ragel_toolchain.ragel_executable,
+        inputs = ragel_toolchain.files + ctx.files.src + ctx.files.data,
         mnemonic = "Ragel",
-        progress_message = "Generating Ragel lexer {} (from {})".format(ctx.label, ctx.attr.src.label),
+        progress_message = "Generating {}".format(ctx.label),
     )
 
     # First action: Ragel state machine compilation
@@ -132,8 +192,8 @@ def _ragel_machine_impl(ctx):
         OutputGroupInfo(ragel_report = depset([out_dot, out_xml])),
     ]
 
-ragel_machine = rule(
-    _ragel_machine_impl,
+ragel = rule(
+    _ragel,
     attrs = {
         "src": attr.label(
             mandatory = True,
@@ -147,17 +207,19 @@ ragel_machine = rule(
         ),
         "language": attr.string(
             values = list(_LANGUAGES),
-            default = "c++",
+        ),
+        "_ragel_toolchain": attr.label(
+            default = "//ragel:toolchain",
         ),
     },
-    toolchains = [_RAGEL_TOOLCHAIN],
 )
 """
 ```python
-load("@io_bazel_rules_ragel//:ragel.bzl", "ragel_machine")
-ragel_machine(
+load("@io_bazel_rules_ragel//ragel:ragel.bzl", "ragel")
+ragel(
     name = "hello",
     src = "hello.rl",
+    language = "c++",
 )
 cc_binary(
     name = "hello_bin",
@@ -166,11 +228,13 @@ cc_binary(
 ```
 """
 
-def _check_version(version):
-    if version not in _VERSION_URLS:
-        fail("Ragel version {} not supported by rules_ragel.".format(repr(version)))
+# endregion }}}
 
-def _ragel_download(ctx):
+# endregion }}}
+
+# region Repository Rules {{{
+
+def _ragel_repository(ctx):
     version = ctx.attr.version
     _check_version(version)
     source = _VERSION_URLS[version]
@@ -204,8 +268,8 @@ def _ragel_download(ctx):
     ctx.symlink(ctx.attr._overlay_bin_BUILD, "bin/BUILD.bazel")
     ctx.file("stub-config/config.h", "")
 
-ragel_download = repository_rule(
-    _ragel_download,
+ragel_repository = repository_rule(
+    _ragel_repository,
     attrs = {
         "version": attr.string(mandatory = True),
         "_overlay_v6_BUILD": attr.label(
@@ -227,12 +291,4 @@ ragel_download = repository_rule(
     },
 )
 
-def ragel_register_toolchains(version = _LATEST_STABLE):
-    _check_version(version)
-    repo_name = "ragel_v{}".format(version)
-    if repo_name not in native.existing_rules().keys():
-        ragel_download(
-            name = repo_name,
-            version = version,
-        )
-    native.register_toolchains("@io_bazel_rules_ragel//ragel/toolchains:v{}_toolchain".format(version))
+# endregion }}}

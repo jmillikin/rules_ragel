@@ -1,15 +1,7 @@
-load("//:ragel.bzl", "RAGEL_VERSIONS")
-load("//ragel:toolchain.bzl", "ragel_toolchain")
-
-[ragel_toolchain(
-    name = "v{}".format(version),
-    ragel = "@ragel_v{}//bin:ragel".format(version),
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-) for version in RAGEL_VERSIONS]
+load("//ragel:ragel.bzl", "ragel_common")
 
 [toolchain(
-    name = "v{}_toolchain".format(version),
-    toolchain = ":v{}".format(version),
-    toolchain_type = "//ragel:toolchain_type",
-) for version in RAGEL_VERSIONS]
+    name = "v{}".format(version),
+    toolchain = "//ragel/internal:toolchain_v{}".format(version),
+    toolchain_type = ragel_common.TOOLCHAIN_TYPE,
+) for version in ragel_common.VERSIONS]

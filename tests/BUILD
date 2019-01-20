@@ -1,8 +1,9 @@
-load("//:ragel.bzl", "ragel_machine")
+load("@io_bazel_rules_ragel//ragel:ragel.bzl", "ragel")
 
-ragel_machine(
+ragel(
     name = "hello_cc",
     src = "hello_cc.rl",
+    language = "c++",
 )
 
 cc_binary(
