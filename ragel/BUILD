@@ -1,4 +1,4 @@
-load("//ragel:ragel.bzl", "ragel_toolchain_alias")
+load("@rules_ragel//ragel/internal:toolchain.bzl", "ragel_toolchain_alias")
 
 toolchain_type(
     name = "toolchain_type",

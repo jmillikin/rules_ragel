@@ -1,4 +1,4 @@
-load("@io_bazel_rules_ragel//ragel:ragel.bzl", "ragel")
+load("@rules_ragel//ragel:ragel.bzl", "ragel")
 
 genrule(
     name = "genrule_test",
@@ -8,7 +8,7 @@ genrule(
 $(RAGEL) -C -o $@ $(location hello_cc.rl)
 """,
     toolchains = [
-        "@io_bazel_rules_ragel//ragel:toolchain",
+        "@rules_ragel//ragel:toolchain",
     ],
 )
 

@@ -14,13 +14,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Bazel build rules for Ragel.
-
-```python
-load("@io_bazel_rules_ragel//ragel:ragel.bzl", "ragel_register_toolchains")
-ragel_register_toolchains()
-```
-"""
+load(
+    "@rules_ragel//ragel/internal:toolchain.bzl",
+    _TOOLCHAIN_TYPE = "TOOLCHAIN_TYPE",
+    _ToolchainInfo = "RagelToolchainInfo",
+)
 
 # region Versions {{{
 
@@ -54,46 +52,6 @@ def _check_version(version):
 
 # endregion }}}
 
-# region Toolchain {{{
-
-_TOOLCHAIN_TYPE = "@io_bazel_rules_ragel//ragel:toolchain_type"
-
-_ToolchainInfo = provider(fields = ["files", "vars", "ragel_executable"])
-
-def _ragel_toolchain_info(ctx):
-    toolchain = _ToolchainInfo(
-        ragel_executable = ctx.executable.ragel,
-        files = depset([ctx.executable.ragel]),
-        vars = {"RAGEL": ctx.executable.ragel.path},
-    )
-    return [
-        platform_common.ToolchainInfo(ragel_toolchain = toolchain),
-        platform_common.TemplateVariableInfo(toolchain.vars),
-    ]
-
-ragel_toolchain_info = rule(
-    _ragel_toolchain_info,
-    attrs = {
-        "ragel": attr.label(
-            executable = True,
-            cfg = "host",
-        ),
-    },
-)
-
-def _ragel_toolchain_alias(ctx):
-    toolchain = ctx.toolchains[_TOOLCHAIN_TYPE].ragel_toolchain
-    return [
-        DefaultInfo(files = toolchain.files),
-        toolchain,
-        platform_common.TemplateVariableInfo(toolchain.vars),
-    ]
-
-ragel_toolchain_alias = rule(
-    _ragel_toolchain_alias,
-    toolchains = [_TOOLCHAIN_TYPE],
-)
-
 def ragel_register_toolchains(version = _LATEST_STABLE):
     _check_version(version)
     repo_name = "ragel_v{}".format(version)
@@ -102,9 +60,7 @@ def ragel_register_toolchains(version = _LATEST_STABLE):
             name = repo_name,
             version = version,
         )
-    native.register_toolchains("@io_bazel_rules_ragel//ragel/toolchains:v{}".format(version))
-
-# endregion }}}
+    native.register_toolchains("@rules_ragel//ragel/toolchains:v{}".format(version))
 
 ragel_common = struct(
     VERSIONS = list(_VERSION_URLS),
@@ -137,7 +93,12 @@ def _ragel(ctx):
 
     run_common = dict(
         executable = ragel_toolchain.ragel_executable,
-        inputs = ragel_toolchain.files + ctx.files.src + ctx.files.data,
+        inputs = depset(
+            direct = ctx.files.src + ctx.files.data,
+            transitive = [
+                ragel_toolchain.files,
+            ],
+        ),
         mnemonic = "Ragel",
         progress_message = "Generating {}".format(ctx.label),
     )
@@ -149,7 +110,7 @@ def _ragel(ctx):
         "-o",
         out_src.path,
     ])
-    ragel_args.add_all(ctx.attr.opts)
+    ragel_args.add_all(ctx.attr.ragel_options)
     ragel_args.add(ctx.file.src.path)
     ctx.actions.run(
         arguments = [ragel_args],
@@ -164,7 +125,7 @@ def _ragel(ctx):
         "-o",
         out_dot.path,
     ])
-    graph_args.add_all(ctx.attr.opts)
+    graph_args.add_all(ctx.attr.ragel_options)
     graph_args.add(ctx.file.src.path)
     ctx.actions.run(
         arguments = [graph_args],
@@ -179,7 +140,7 @@ def _ragel(ctx):
         "-o",
         out_xml.path,
     ])
-    report_args.add_all(ctx.attr.opts)
+    report_args.add_all(ctx.attr.ragel_options)
     report_args.add(ctx.file.src.path)
     ctx.actions.run(
         arguments = [report_args],
@@ -188,8 +149,8 @@ def _ragel(ctx):
     )
 
     return [
-        DefaultInfo(files = depset([out_src])),
-        OutputGroupInfo(ragel_report = depset([out_dot, out_xml])),
+        DefaultInfo(files = depset(direct = [out_src])),
+        OutputGroupInfo(ragel_report = depset(direct = [out_dot, out_xml])),
     ]
 
 ragel = rule(
@@ -202,31 +163,16 @@ ragel = rule(
         "data": attr.label_list(
             allow_files = True,
         ),
-        "opts": attr.string_list(
-            allow_empty = True,
-        ),
+        "ragel_options": attr.string_list(),
         "language": attr.string(
             values = list(_LANGUAGES),
+            mandatory = True,
         ),
         "_ragel_toolchain": attr.label(
-            default = "//ragel:toolchain",
+            default = "@rules_ragel//ragel:toolchain",
         ),
     },
 )
-"""
-```python
-load("@io_bazel_rules_ragel//ragel:ragel.bzl", "ragel")
-ragel(
-    name = "hello",
-    src = "hello.rl",
-    language = "c++",
-)
-cc_binary(
-    name = "hello_bin",
-    srcs = [":hello"],
-)
-```
-"""
 
 # endregion }}}
 
@@ -274,19 +220,19 @@ ragel_repository = repository_rule(
         "version": attr.string(mandatory = True),
         "_overlay_v6_BUILD": attr.label(
             default = "//ragel/internal:overlay/ragel_v6.BUILD",
-            single_file = True,
+            allow_single_file = True,
         ),
         "_overlay_v7_BUILD": attr.label(
             default = "//ragel/internal:overlay/ragel_v7.BUILD",
-            single_file = True,
+            allow_single_file = True,
         ),
         "_overlay_bin_BUILD": attr.label(
             default = "//ragel/internal:overlay/ragel_bin.BUILD",
-            single_file = True,
+            allow_single_file = True,
         ),
         "_overlay_colm_BUILD": attr.label(
             default = "//ragel/internal:overlay/colm.BUILD",
-            single_file = True,
+            allow_single_file = True,
         ),
     },
 )
