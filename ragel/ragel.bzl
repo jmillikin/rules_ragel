@@ -15,44 +15,19 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load(
+    "@rules_ragel//ragel/internal:versions.bzl",
+    _COLM_URLS = "COLM_URLS",
+    _DEFAULT_VERSION = "DEFAULT_VERSION",
+    _VERSION_URLS = "VERSION_URLS",
+    _check_version = "check_version",
+)
+load(
     "@rules_ragel//ragel/internal:toolchain.bzl",
     _TOOLCHAIN_TYPE = "TOOLCHAIN_TYPE",
     _ToolchainInfo = "RagelToolchainInfo",
 )
 
-# region Versions {{{
-
-_LATEST_STABLE = "6.10"
-
-_VERSION_URLS = {
-    "7.0.0.11": {
-        "urls": ["http://www.colm.net/files/ragel/ragel-7.0.0.11.tar.gz"],
-        "sha256": "08bac6ff8ea9ee7bdd703373fe4d39274c87fecf7ae594774dfdc4f4dd4a5340",
-        "colm": "0.13.0.6",
-        "build": "v7",
-        "pubdate": "May 2018",
-    },
-    "6.10": {
-        "urls": ["http://www.colm.net/files/ragel/ragel-6.10.tar.gz"],
-        "sha256": "5f156edb65d20b856d638dd9ee2dfb43285914d9aa2b6ec779dac0270cd56c3f",
-        "build": "v6",
-    },
-}
-
-_COLM_URLS = {
-    "0.13.0.6": {
-        "urls": ["http://www.colm.net/files/colm/colm-0.13.0.6.tar.gz"],
-        "sha256": "4644956dd82bedf3795bb1a6fdf9ee8bdd33bd1e7769ef81ffdaa3da70c5a349",
-    },
-}
-
-def _check_version(version):
-    if version not in _VERSION_URLS:
-        fail("Ragel version {} not supported by rules_ragel.".format(repr(version)))
-
-# endregion }}}
-
-def ragel_register_toolchains(version = _LATEST_STABLE):
+def ragel_register_toolchains(version = _DEFAULT_VERSION):
     _check_version(version)
     repo_name = "ragel_v{}".format(version)
     if repo_name not in native.existing_rules().keys():

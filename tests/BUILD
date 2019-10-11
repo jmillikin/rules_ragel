@@ -1,4 +1,5 @@
 load("@rules_ragel//ragel:ragel.bzl", "ragel")
+load("@rules_ragel//ragel/internal:versions.bzl", "VERSION_URLS")
 
 genrule(
     name = "genrule_test",
@@ -21,4 +22,9 @@ ragel(
 cc_binary(
     name = "hello_cc_bin",
     srcs = [":hello_cc"],
+)
+
+filegroup(
+    name = "all_versions",
+    srcs = ["@ragel_v{}//bin:ragel".format(version) for version in VERSION_URLS],
 )
