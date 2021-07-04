@@ -27,6 +27,7 @@ load(
     _ToolchainInfo = "RagelToolchainInfo",
 )
 
+# buildifier: disable=unnamed-macro
 def ragel_register_toolchains(version = _DEFAULT_VERSION):
     _check_version(version)
     repo_name = "ragel_v{}".format(version)

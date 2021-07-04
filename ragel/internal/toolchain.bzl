@@ -16,6 +16,7 @@
 
 TOOLCHAIN_TYPE = "@rules_ragel//ragel:toolchain_type"
 
+# buildifier: disable=provider-params
 RagelToolchainInfo = provider(fields = ["files", "vars", "ragel_executable"])
 
 def _ragel_toolchain_info(ctx):
