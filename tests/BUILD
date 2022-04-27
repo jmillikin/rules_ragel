@@ -45,5 +45,9 @@ cc_test(
 
 filegroup(
     name = "all_versions",
-    srcs = ["@ragel_v{}//bin:ragel".format(version) for version in VERSION_URLS],
+    srcs = [
+        "@ragel_v{}//bin:ragel".format(version)
+        for version in VERSION_URLS
+    ],
+    tags = ["manual"],
 )
